@@ -1,8 +1,9 @@
 <script lang="ts">
+  import { Textarea } from '$lib/components/ui/textarea';
   let nextChat = '';
 </script>
 
-<h1>Welcome to SvelteKit</h1>
-<p>Visit <a href="https://kit.svelte.dev">kit.svelte.dev</a> to read the documentation</p>
-
-<textarea bind:value={nextChat} />
+<main class="flex h-full flex-col">
+  <div class="flex-1">Response</div>
+  <Textarea bind:value={nextChat} placeholder="Type your question here" />
+</main>
