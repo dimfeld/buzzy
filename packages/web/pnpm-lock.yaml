@@ -11,6 +11,9 @@ dependencies:
   clsx:
     specifier: ^2.0.0
     version: 2.0.0
+  ky:
+    specifier: ^1.0.1
+    version: 1.0.1
   lucide-svelte:
     specifier: ^0.274.0
     version: 0.274.0(svelte@4.2.0)
@@ -1491,6 +1494,11 @@ packages:
   /known-css-properties@0.28.0:
     resolution: {integrity: sha512-9pSL5XB4J+ifHP0e0jmmC98OGC1nL8/JjS+fi6mnTlIf//yt/MfVLtKg7S6nCtj/8KTcWX7nRlY0XywoYY1ISQ==}
     dev: true
+
+  /ky@1.0.1:
+    resolution: {integrity: sha512-UvcwpQO0LOuZwG0Ti3VDo6w57KYt+r4bWEYlNaMt82hgyFtse86QtOGum1RzsZni31FndXQl6NvtDArfunt2JQ==}
+    engines: {node: '>=18'}
+    dev: false
 
   /levn@0.4.1:
     resolution: {integrity: sha512-+bT2uH4E5LGE7h/n3evcS/sQlJXCpIp6ym8OWJ5eV6+67Dsql/LaaT7qJBAt2rzfoa/5QBGBhxDix1dMt2kQKQ==}
