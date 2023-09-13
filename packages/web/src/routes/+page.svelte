@@ -34,13 +34,13 @@
       console.dir(result);
       await update();
       if (result.type === 'success' && result.data?.response) {
-        data.messages = [
-          ...data.messages,
-          {
-            role: 'assistant',
-            content: result.data.response,
-          },
-        ];
+        // data.messages = [
+        //   ...data.messages,
+        //   {
+        //     role: 'assistant',
+        //     content: result.data.response,
+        //   },
+        // ];
 
         setTimeout(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }), 0);
       }

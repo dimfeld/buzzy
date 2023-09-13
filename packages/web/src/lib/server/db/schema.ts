@@ -8,10 +8,10 @@ export const chats = sqliteTable('chats', {
   title: text('title'),
 
   started_at: integer('started_at', { mode: 'timestamp' })
-    .default(sql`unixepoch()`)
+    .default(sql`(unixepoch())`)
     .notNull(),
   last_message_at: integer('last_message_at', { mode: 'timestamp' })
-    .default(sql`unixepoch()`)
+    .default(sql`(unixepoch())`)
     .notNull(),
 });
 
@@ -26,7 +26,7 @@ export const messages = sqliteTable(
       .notNull(),
     timestamp: integer('timestamp', { mode: 'timestamp' })
       .notNull()
-      .default(sql`unixepoch()`),
+      .default(sql`(unixepoch())`),
   },
   (table) => {
     return {
