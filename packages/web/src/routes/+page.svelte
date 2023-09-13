@@ -5,6 +5,7 @@
   import ChatBubble from '$lib/components/ChatBubble.svelte';
   import type { SubmitFunction } from '@sveltejs/kit';
 
+  export let data;
   export let form;
 
   let formEl: HTMLFormElement;
@@ -16,7 +17,6 @@
     role: 'assistant' | 'user';
     content: string;
   }
-  let messages: Message[] = [{ role: 'assistant', content: `Hi I'm Buzzy!` }];
 
   const handleSubmit: SubmitFunction = async ({ formData, cancel }) => {
     const chat = formData.get('chat') as string;
@@ -24,7 +24,7 @@
       cancel();
     }
 
-    messages = [...messages, { role: 'user', content: chat }];
+    data.messages = [...data.messages, { role: 'user', content: chat }];
 
     submitting = true;
     setTimeout(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }), 0);
@@ -34,8 +34,8 @@
       console.dir(result);
       await update();
       if (result.type === 'success' && result.data?.response) {
-        messages = [
-          ...messages,
+        data.messages = [
+          ...data.messages,
           {
             role: 'assistant',
             content: result.data.response,
@@ -50,11 +50,13 @@
 
 <main class="flex h-full flex-col">
   <div bind:this={chatEl} class="flex flex-1 flex-col gap-8 overflow-y-auto px-8">
-    {#each messages as message}
+    {#each data.messages as message}
       <ChatBubble role={message.role}>{message.content}</ChatBubble>
+    {:else}
+      <ChatBubble role="assistant">Hi I'm Buzzy!</ChatBubble>
     {/each}
     {#if submitting}
-      <ChatBubble role="assistant">Thinking...</ChatBubble>
+      <ChatBubble role="assistant">Let me think...</ChatBubble>
     {/if}
   </div>
   <form
