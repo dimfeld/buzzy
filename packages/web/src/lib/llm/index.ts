@@ -62,6 +62,9 @@ export async function sendChat(chatId: number, chat: string) {
     ],
   });
 
+  const duration = Date.now() - sendTime.valueOf();
+  console.log(`Duration: ${duration}ms`);
+
   const message = response.choices[0].message.content;
   if (!message) {
     return '';

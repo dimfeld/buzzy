@@ -40,6 +40,9 @@
   },
   "type": "module",
   "dependencies": {
+    "@picovoice/cobra-web": "^1.2.6",
+    "@picovoice/porcupine-web": "^2.2.1",
+    "@picovoice/web-voice-processor": "^4.0.8",
     "bits-ui": "^0.5.7",
     "clsx": "^2.0.0",
     "drizzle-orm": "^0.28.6",

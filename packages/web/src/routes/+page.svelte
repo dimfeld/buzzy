@@ -4,6 +4,9 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import ChatBubble from '$lib/components/ChatBubble.svelte';
   import type { SubmitFunction } from '@sveltejs/kit';
+  import { listenAudio, type ListenerState } from '$lib/audio/listening';
+  import { onMount } from 'svelte';
+  import type { Writable } from 'svelte/store';
 
   export let data;
   export let form;
@@ -13,7 +16,45 @@
 
   let submitting = false;
 
+  let latest = '';
+
+  function gotAudio(buffer: Int16Array) {
+    latest = `Got ${buffer.length} samples of audio at ${new Date()}`;
+    playSound(buffer);
+  }
+
+  let listenerState: Writable<ListenerState> | null = null;
+  let audioContext: AudioContext | null = null;
+
+  function playSound(data: Int16Array) {
+    if (!audioContext) {
+      return;
+    }
+
+    let buffer = audioContext.createBuffer(1, data.length, 16000);
+    let float32Array = new Float32Array(data.length);
+
+    for (let i = 0; i < data.length; i++) {
+      float32Array[i] = data[i] / 0x8000; // Convert from Int16 to Float32
+    }
+
+    buffer.copyToChannel(float32Array, 0);
+
+    let source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.destination);
+    source.start();
+  }
+
+  onMount(() => {
+    audioContext = new AudioContext();
+    const audio = listenAudio(gotAudio);
+    listenerState = audio.listenerState;
+    return audio.unsubscribe;
+  });
+
   interface Message {
+    id: number;
     role: 'assistant' | 'user';
     content: string;
   }
@@ -31,17 +72,8 @@
 
     return async function ({ update, result }) {
       submitting = false;
-      console.dir(result);
       await update();
       if (result.type === 'success' && result.data?.response) {
-        // data.messages = [
-        //   ...data.messages,
-        //   {
-        //     role: 'assistant',
-        //     content: result.data.response,
-        //   },
-        // ];
-
         setTimeout(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }), 0);
       }
     };
@@ -58,6 +90,15 @@
     {#if submitting}
       <ChatBubble role="assistant">Let me think...</ChatBubble>
     {/if}
+    <ChatBubble role="assistant">
+      {#if $listenerState === 'waiting' && !latest}
+        Listening for wake word
+      {:else if $listenerState === 'active'}
+        Recording...
+      {:else}
+        {latest}
+      {/if}
+    </ChatBubble>
   </div>
   <form
     bind:this={formEl}
