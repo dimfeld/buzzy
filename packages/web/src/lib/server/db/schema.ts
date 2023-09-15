@@ -1,6 +1,4 @@
-import { Database } from 'bun:sqlite';
 import { sql } from 'drizzle-orm';
-import { drizzle, type BunSQLiteDatabase } from 'drizzle-orm/bun-sqlite';
 import { index, integer, sqliteTable, text } from 'drizzle-orm/sqlite-core';
 
 export const chats = sqliteTable('chats', {

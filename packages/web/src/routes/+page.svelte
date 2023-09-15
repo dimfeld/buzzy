@@ -9,7 +9,6 @@
   import type { Writable } from 'svelte/store';
 
   export let data;
-  export let form;
 
   let formEl: HTMLFormElement;
   let chatEl: HTMLDivElement;
