@@ -17,9 +17,25 @@
 
   let latest = '';
 
-  function gotAudio(buffer: Int16Array) {
+  async function gotAudio(buffer: Int16Array) {
     latest = `Got ${buffer.length} samples of audio at ${new Date()}`;
-    playSound(buffer);
+
+    const body = new FormData();
+    body.set('sample_rate', '16000');
+    body.set('data', new File([buffer], 'audio.bin', { type: 'application/octet-stream' }));
+
+    const start = Date.now();
+    const response = await fetch('./ask_audio', {
+      method: 'POST',
+      body,
+    });
+    const duration = Date.now() - start;
+
+    const result = await response.json();
+    const message = `${result.result} -- took ${duration}ms`;
+    data.messages = [...data.messages, { role: 'user', content: message }];
+
+    // playSound(buffer);
   }
 
   let listenerState: Writable<ListenerState> | null = null;

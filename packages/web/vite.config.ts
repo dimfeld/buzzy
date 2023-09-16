@@ -3,6 +3,8 @@ import { defineConfig } from 'vite';
 
 export default defineConfig({
   plugins: [sveltekit()],
+  // Get .env from the root directory
+  envDir: '../..',
   ssr: {
     noExternal: [
       // These don't conform exactly to what Node.js expects for ESM, so
