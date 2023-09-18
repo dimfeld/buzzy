@@ -11,8 +11,8 @@ export type ListenerState = 'initializing' | 'waiting' | 'active';
 const VOICE_PROB_THRESHOLD = 0.7;
 const SILENCE_THRESHOLD_MS = 1500;
 const FRAMES_PER_SECOND = 16000 / 512;
-const SECONDS_INACTIVE_DATA = 1;
-const INACTIVE_FRAMES = Math.round(SECONDS_INACTIVE_DATA * FRAMES_PER_SECOND);
+const SECONDS_INACTIVE_DATA = 0.1;
+const INACTIVE_FRAMES = Math.ceil(SECONDS_INACTIVE_DATA * FRAMES_PER_SECOND);
 
 export type AudioCallback = (data: Int16Array) => void | Promise<void>;
 
