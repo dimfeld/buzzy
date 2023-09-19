@@ -38,7 +38,7 @@ dependencies = [
     "marshmallow>=3.20.1",
     "matplotlib>=3.7.3",
     "packaging>=23.1",
-    "ruamel.yaml>=0.17.32",
+    "ruamel.yaml>=0.17.32"
 ]
 readme = "README.md"
 requires-python = ">= 3.8"

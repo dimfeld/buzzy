@@ -25,7 +25,7 @@
     body.set('data', new File([buffer], 'audio.bin', { type: 'application/octet-stream' }));
 
     const start = Date.now();
-    const response = await fetch('./ask_audio', {
+    const response = await fetch('./ask/transcribe', {
       method: 'POST',
       body,
     });
@@ -35,25 +35,61 @@
     const message = `${result.result} -- took ${duration}ms`;
     data.messages = [...data.messages, { role: 'user', content: message }];
 
-    // playSound(buffer);
+    getTts(result.result);
+
+    // playSound(int16ToFloat32(buffer, 16000));
+  }
+
+  async function getTts(text: string) {
+    const ttsReq = new FormData();
+    ttsReq.set('text', text);
+    const ttsResponse = await fetch('./ask/tts', {
+      method: 'POST',
+      body: ttsReq,
+    });
+
+    const ttsBlob = await ttsResponse.blob();
+    const ttsOutputBuf = await ttsBlob.arrayBuffer();
+
+    playWav(ttsOutputBuf);
+
+    //const ttsOutputFloats = new Float32Array(ttsOutputBuf);
+    //playSound(ttsOutputFloats, 16000);
   }
 
   let listenerState: Writable<ListenerState> | null = null;
   let audioContext: AudioContext | null = null;
 
-  function playSound(data: Int16Array) {
-    if (!audioContext) {
-      return;
-    }
-
-    let buffer = audioContext.createBuffer(1, data.length, 16000);
+  function int16ToFloat32(data: Int16Array) {
     let float32Array = new Float32Array(data.length);
 
     for (let i = 0; i < data.length; i++) {
       float32Array[i] = data[i] / 0x8000; // Convert from Int16 to Float32
     }
 
-    buffer.copyToChannel(float32Array, 0);
+    return float32Array;
+  }
+
+  async function playWav(data: ArrayBuffer) {
+    if (!audioContext) {
+      return null;
+    }
+
+    const buffer = await audioContext.decodeAudioData(data);
+    const source = audioContext.createBufferSource();
+    source.buffer = buffer;
+    source.connect(audioContext.destination);
+    source.start();
+  }
+
+  function playSound(data: Float32Array, sampleRate: number) {
+    if (!audioContext) {
+      return;
+    }
+
+    let buffer = audioContext.createBuffer(1, data.length, sampleRate);
+
+    buffer.copyToChannel(data, 0);
 
     let source = audioContext.createBufferSource();
     source.buffer = buffer;
@@ -137,5 +173,13 @@
       }}
     />
     <Button id="submit-button" disabled={submitting} type="submit" class="h-auto">Submit</Button>
+    <Button
+      type="button"
+      class="h-auto"
+      on:click={() =>
+        getTts(
+          'The biggest shark in the world was the megalodon. It was known for eating other sharks, and some scientists consider it a dinosaur.'
+        )}>Test</Button
+    >
   </form>
 </main>

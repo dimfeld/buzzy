@@ -76,7 +76,7 @@ msgpack==1.0.5
 multidict==6.0.4
 mypy-extensions==1.0.0
 nemo-toolkit==1.20.0
-networkx==3.1
+networkx==2.8.8
 nltk==3.8.1
 numba==0.57.1
 numpy==1.23.5
