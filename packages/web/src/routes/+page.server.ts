@@ -1,4 +1,4 @@
-import { getChatContext, getOrCreateChat, sendChat } from '$lib/llm/index.js';
+import { getChatContext, getOrCreateChat, handleMessage, sendChat } from '$lib/llm/index.js';
 
 export async function load() {
   const chatId = await getOrCreateChat();
@@ -16,14 +16,7 @@ export const actions = {
   default: async ({ request }) => {
     let form = await request.formData();
     let chat = form.get('chat') as string;
-    if (!chat) {
-      return {
-        response: '',
-      };
-    }
-
-    const chatId = await getOrCreateChat();
-    const response = await sendChat(chatId, chat);
+    const response = await handleMessage(chat);
     return {
       response,
     };

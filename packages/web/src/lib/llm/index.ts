@@ -87,3 +87,14 @@ export async function sendChat(chatId: number, chat: string) {
 
   return message;
 }
+
+export async function handleMessage(text: string) {
+  if (!text) {
+    return '';
+  }
+
+  const chatId = await getOrCreateChat();
+  const response = await sendChat(chatId, text);
+
+  return response;
+}

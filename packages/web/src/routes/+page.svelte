@@ -1,11 +1,12 @@
 <script lang="ts">
+  import ky from 'ky';
   import { enhance } from '$app/forms';
   import Textarea from '$lib/components/ui/textarea/textarea.svelte';
   import Button from '$lib/components/ui/button/button.svelte';
   import ChatBubble from '$lib/components/ChatBubble.svelte';
   import type { SubmitFunction } from '@sveltejs/kit';
   import { listenAudio, type ListenerState } from '$lib/audio/listening';
-  import { onMount } from 'svelte';
+  import { onMount, tick } from 'svelte';
   import type { Writable } from 'svelte/store';
 
   export let data;
@@ -15,27 +16,47 @@
 
   let submitting = false;
 
-  let latest = '';
+  interface Message {
+    role: 'assistant' | 'user';
+    content: string;
+  }
+
+  function addMessage(message: Message) {
+    data.messages = [...data.messages, message];
+    tick().then(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }));
+  }
 
   async function gotAudio(buffer: Int16Array) {
-    latest = `Got ${buffer.length} samples of audio at ${new Date()}`;
-
     const body = new FormData();
     body.set('sample_rate', '16000');
     body.set('data', new File([buffer], 'audio.bin', { type: 'application/octet-stream' }));
 
-    const start = Date.now();
-    const response = await fetch('./ask/transcribe', {
+    const result = await ky('/ask/transcribe', {
       method: 'POST',
       body,
-    });
-    const duration = Date.now() - start;
+    }).json<{ result: string }>();
 
-    const result = await response.json();
-    const message = `${result.result} -- took ${duration}ms`;
-    data.messages = [...data.messages, { role: 'user', content: message }];
+    addMessage({ role: 'user', content: result.result });
 
-    getTts(result.result);
+    try {
+      submitting = true;
+      tick().then(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }));
+
+      const chatBody = new FormData();
+      chatBody.set('text', result.result);
+      var assistantResponse = await ky('/ask/chat', {
+        method: 'POST',
+        body: chatBody,
+      }).json<{ response: string }>();
+
+      addMessage({ role: 'assistant', content: assistantResponse.response });
+    } finally {
+      submitting = false;
+    }
+
+    if (assistantResponse) {
+      getTts(assistantResponse.response);
+    }
 
     // playSound(int16ToFloat32(buffer, 16000));
   }
@@ -104,12 +125,6 @@
     return audio.unsubscribe;
   });
 
-  interface Message {
-    id: number;
-    role: 'assistant' | 'user';
-    content: string;
-  }
-
   const handleSubmit: SubmitFunction = async ({ formData, cancel }) => {
     const chat = formData.get('chat') as string;
     if (!chat) {
@@ -125,6 +140,7 @@
       submitting = false;
       await update();
       if (result.type === 'success' && result.data?.response) {
+        getTts(result.data.response);
         setTimeout(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }), 0);
       }
     };
@@ -141,15 +157,6 @@
     {#if submitting}
       <ChatBubble role="assistant">Let me think...</ChatBubble>
     {/if}
-    <ChatBubble role="assistant">
-      {#if $listenerState === 'waiting' && !latest}
-        Listening for wake word
-      {:else if $listenerState === 'active'}
-        Recording...
-      {:else}
-        {latest}
-      {/if}
-    </ChatBubble>
   </div>
   <form
     bind:this={formEl}
@@ -173,13 +180,5 @@
       }}
     />
     <Button id="submit-button" disabled={submitting} type="submit" class="h-auto">Submit</Button>
-    <Button
-      type="button"
-      class="h-auto"
-      on:click={() =>
-        getTts(
-          'The biggest shark in the world was the megalodon. It was known for eating other sharks, and some scientists consider it a dinosaur.'
-        )}>Test</Button
-    >
   </form>
 </main>
