@@ -8,13 +8,16 @@
   import { listenAudio, type ListenerState } from '$lib/audio/listening';
   import { onMount, tick } from 'svelte';
   import type { Writable } from 'svelte/store';
+  import { machine } from '$lib/state.js';
+  import { useMachine } from '@xstate/svelte';
 
   export let data;
 
   let formEl: HTMLFormElement;
   let chatEl: HTMLDivElement;
 
-  let submitting = false;
+  const { state, send, service } = useMachine(machine);
+  $: submitting = $state.matches('processing');
 
   interface Message {
     role: 'assistant' | 'user';
@@ -38,25 +41,23 @@
 
     addMessage({ role: 'user', content: result.result });
 
-    try {
-      submitting = true;
-      tick().then(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }));
+    tick().then(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }));
 
-      const chatBody = new FormData();
-      chatBody.set('text', result.result);
-      var assistantResponse = await ky('/ask/chat', {
-        method: 'POST',
-        body: chatBody,
-      }).json<{ response: string }>();
+    const chatBody = new FormData();
+    chatBody.set('text', result.result);
+    var assistantResponse = await ky('/ask/chat', {
+      method: 'POST',
+      body: chatBody,
+    }).json<{ response: string }>();
 
-      addMessage({ role: 'assistant', content: assistantResponse.response });
-    } finally {
-      submitting = false;
-    }
+    send({ type: 'GOT_ANSWER' });
+
+    addMessage({ role: 'assistant', content: assistantResponse.response });
 
     if (assistantResponse) {
-      getTts(assistantResponse.response);
+      await getTts(assistantResponse.response);
     }
+    send({ type: 'ANSWERED' });
 
     // playSound(int16ToFloat32(buffer, 16000));
   }
@@ -72,13 +73,12 @@
     const ttsBlob = await ttsResponse.blob();
     const ttsOutputBuf = await ttsBlob.arrayBuffer();
 
-    playWav(ttsOutputBuf);
+    return playWav(ttsOutputBuf);
 
     //const ttsOutputFloats = new Float32Array(ttsOutputBuf);
     //playSound(ttsOutputFloats, 16000);
   }
 
-  let listenerState: Writable<ListenerState> | null = null;
   let audioContext: AudioContext | null = null;
 
   function int16ToFloat32(data: Int16Array) {
@@ -100,7 +100,11 @@
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
     source.connect(audioContext.destination);
-    source.start();
+
+    return new Promise((resolve) => {
+      source.addEventListener('ended', () => resolve(null));
+      source.start();
+    });
   }
 
   function playSound(data: Float32Array, sampleRate: number) {
@@ -120,7 +124,7 @@
 
   onMount(() => {
     audioContext = new AudioContext();
-    const audio = listenAudio(gotAudio);
+    const audio = listenAudio(service, gotAudio);
     listenerState = audio.listenerState;
     return audio.unsubscribe;
   });
@@ -154,10 +158,11 @@
     {:else}
       <ChatBubble role="assistant">Hi I'm Buzzy!</ChatBubble>
     {/each}
-    {#if submitting}
+    {#if $state.matches('processing')}
       <ChatBubble role="assistant">Let me think...</ChatBubble>
     {/if}
   </div>
+  <div>Current State: {$state.value}</div>
   <form
     bind:this={formEl}
     class="flex items-stretch gap-2"

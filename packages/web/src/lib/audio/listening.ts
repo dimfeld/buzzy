@@ -4,7 +4,7 @@ import PorcupineParams from './models/porcupine_params.pv?url';
 import { PorcupineWorker } from '@picovoice/porcupine-web';
 import { CobraWorker } from '@picovoice/cobra-web';
 import { WebVoiceProcessor, type WvpMessageEvent } from '@picovoice/web-voice-processor';
-import { writable } from 'svelte/store';
+import type { StateMachine } from '$lib/state';
 
 export type ListenerState = 'initializing' | 'waiting' | 'active';
 
@@ -16,9 +16,16 @@ const INACTIVE_FRAMES = Math.ceil(SECONDS_INACTIVE_DATA * FRAMES_PER_SECOND);
 
 export type AudioCallback = (data: Int16Array) => void | Promise<void>;
 
-export function listenAudio(cb: AudioCallback) {
-  let state: ListenerState = 'initializing';
-  let stateStore = writable<ListenerState>(state);
+export function listenAudio(state: StateMachine, cb: AudioCallback) {
+  let recording = false;
+  const unsubState = state.onTransition((s) => {
+    console.dir(s);
+    if (s.matches('listening')) {
+      startRecording();
+    } else {
+      stopRecording();
+    }
+  });
 
   let inputBuffer: Int16Array[] = [];
   let lastInactiveFrames: Int16Array[] = [];
@@ -26,7 +33,7 @@ export function listenAudio(cb: AudioCallback) {
     onmessage: (e: MessageEvent<WvpMessageEvent>) => {
       switch (e.data.command) {
         case 'process':
-          if (state === 'active') {
+          if (recording) {
             inputBuffer.push(e.data.inputFrame);
           } else {
             // Save the last SECONDS_INACTIVE_DATA of audio so that we don't lose the start of the sentence after the
@@ -40,29 +47,20 @@ export function listenAudio(cb: AudioCallback) {
     },
   };
 
-  function setState(newState: ListenerState) {
-    state = newState;
-    stateStore.set(newState);
-  }
-
   async function keywordDetected() {
-    if (state === 'active') {
-      return;
-    }
-
-    startRecording();
+    state.send({ type: 'WAKE_WORD' });
   }
 
   let silenceStart = 0;
   async function voiceProbability(probability: number) {
-    if (state !== 'active') {
+    if (!recording) {
       return;
     }
 
     if (probability < VOICE_PROB_THRESHOLD) {
       let now = Date.now();
       if (silenceStart && now - silenceStart > SILENCE_THRESHOLD_MS) {
-        stopRecording();
+        state.send({ type: 'VOICE_END' });
       } else if (!silenceStart) {
         silenceStart = now;
       }
@@ -72,23 +70,25 @@ export function listenAudio(cb: AudioCallback) {
   }
 
   async function startRecording() {
-    if (state === 'active') {
+    if (recording) {
       return;
     }
+
+    recording = true;
 
     silenceStart = 0;
     inputBuffer = lastInactiveFrames;
     lastInactiveFrames = [];
-    setState('active');
     await WebVoiceProcessor.subscribe(cobra);
   }
 
   async function stopRecording() {
-    if (state === 'waiting') {
+    if (!recording) {
       return;
     }
 
-    setState('waiting');
+    recording = false;
+
     await WebVoiceProcessor.unsubscribe(cobra);
 
     let totalLength = inputBuffer.reduce((acc, b) => acc + b.length, 0);
@@ -125,22 +125,21 @@ export function listenAudio(cb: AudioCallback) {
     cobra = await CobraWorker.create(PUBLIC_PICOVOICE_KEY, voiceProbability);
 
     await WebVoiceProcessor.subscribe([porcupine, recorder]);
-    if (state === 'initializing') {
-      setState('waiting');
-    }
+    state.send({ type: 'INITIALIZED' });
   }
 
   init();
 
   return {
-    listenerState: stateStore,
     unsubscribe: async function () {
-      await WebVoiceProcessor.reset();
-
-      await Promise.all([porcupine.release(), cobra.release()]);
-
-      porcupine.terminate();
-      cobra.terminate();
+      unsubState?.unsubscribe();
+      try {
+        await WebVoiceProcessor.reset();
+        await Promise.all([porcupine.release(), cobra.release()]);
+      } finally {
+        porcupine.terminate();
+        cobra.terminate();
+      }
     },
   };
 }
