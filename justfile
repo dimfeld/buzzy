@@ -16,4 +16,4 @@ run-model-backend:
       --reload \
       --port {{env_var('FASTAPI_PORT')}} \
       --app-dir src/model_backend_py \
-      __init__:app 
+      app:app 
