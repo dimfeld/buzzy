@@ -10,6 +10,7 @@
   import type { Writable } from 'svelte/store';
   import { machine } from '$lib/state.js';
   import { useMachine } from '@xstate/svelte';
+  import { WebSocket } from 'partysocket';
 
   export let data;
 
@@ -18,6 +19,12 @@
 
   const { state, send, service } = useMachine(machine);
   $: submitting = $state.matches('processing');
+
+  const wsPath = new URL('/ws', location.href);
+  wsPath.protocol = 'ws:';
+  const ws = new WebSocket(wsPath.toString());
+
+  ws.addEventListener('message', (ev) => {});
 
   interface Message {
     role: 'assistant' | 'user';

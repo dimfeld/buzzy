@@ -32,6 +32,9 @@ dependencies:
   openai:
     specifier: ^4.6.0
     version: 4.7.0
+  partysocket:
+    specifier: ^0.0.8
+    version: 0.0.8
   tailwind-merge:
     specifier: ^1.14.0
     version: 1.14.0
@@ -2866,6 +2869,10 @@ packages:
     dependencies:
       callsites: 3.1.0
     dev: true
+
+  /partysocket@0.0.8:
+    resolution: {integrity: sha512-i+N0Zn+Zfy5vPTbW3NTYQp+lsW4+hvosLlfZkBzEyA6uHF131pXpjlr5FukPhSOLTbRGSM59SmIub240eu5XIg==}
+    dev: false
 
   /path-exists@4.0.0:
     resolution: {integrity: sha512-ak9Qy5Q7jYb2Wwcey5Fpvg2KoAc/ZIhLSLOSBmRmygPsGwkVVt0fZa0qrtMz+m6tJTAHfZQ8FnmB4MG4LWy7/w==}
