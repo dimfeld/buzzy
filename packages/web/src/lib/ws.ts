@@ -16,8 +16,6 @@ export type ClientInitMsg = Message<MsgType.client_hello, { sample_rate: number 
 export type RequestAudioMsg = Message<MsgType.request_audio_chat, { audio: ArrayBuffer }>;
 export type RequestTextMsg = Message<MsgType.request_text_chat, { text: string }>;
 
-export type ClientToServerMsg = ClientInitMsg | RequestAudioMsg | RequestTextMsg;
-
 export type NewChatResponseMsg = Message<MsgType.new_chat_response, { chat_id: number }>;
 export type ChatResponseAudioMsg = Message<
   MsgType.chat_response_audio,
@@ -28,30 +26,51 @@ export type ChatResponseTextMsg = Message<
   { chat_id: number; text: string }
 >;
 
-enum MessageFormat {
-  text = 1,
-  text_and_binary = 2,
+export type AnyMessage =
+  | ClientInitMsg
+  | RequestAudioMsg
+  | RequestTextMsg
+  | NewChatResponseMsg
+  | ChatResponseAudioMsg
+  | ChatResponseTextMsg;
+
+function hasBinaryData(type: MsgType) {
+  return type === MsgType.chat_response_audio || type === MsgType.request_audio_chat;
 }
 
+const CURRENT_VERSION = 0;
 const HEADER_LENGTH = 8;
 
+// Data format
+// 0 - protocol version
+// 1 - reserved for future flags
+// 2-3 - message type
+// 4-7 - text data length
+// text data
+// binary data, if present
+
 function serializeData(msgType: MsgType, jsonData: object, binary?: ArrayBuffer) {
-  const format = binary ? MessageFormat.text_and_binary : MessageFormat.text;
   let encoder = new TextEncoder();
   let textData = JSON.stringify(jsonData);
 
   let encodedText = encoder.encode(textData);
 
   let buffer = new ArrayBuffer(HEADER_LENGTH + textData.length + (binary?.byteLength ?? 0));
-  let headerView = new Uint32Array(buffer);
 
-  headerView[0] = format;
-  headerView[1] = textData.length;
+  let dataView = new DataView(buffer);
+  dataView.setUint8(0, CURRENT_VERSION);
+  dataView.setUint8(1, 0); // Reserved for future use
+  dataView.setUint16(2, msgType, true);
+  dataView.setUint32(4, encodedText.length, true);
 
   let byteView = new Uint8Array(buffer);
   byteView.set(encodedText, HEADER_LENGTH);
 
   if (binary) {
+    if (!hasBinaryData(msgType)) {
+      throw new Error(`Binary data not allowed for message type ${msgType}`);
+    }
+
     let audioBytes = new Uint8Array(binary);
     byteView.set(audioBytes, HEADER_LENGTH + encodedText.byteLength);
   }
@@ -66,24 +85,28 @@ interface DeserializedMessage {
 }
 
 function deserializeData(data: ArrayBuffer): DeserializedMessage {
-  let headerView = new Uint32Array(data);
-  let format = headerView[0];
-  let textLength = headerView[1];
+  let headerView = new DataView(data);
+  let version = headerView.getUint8(0);
+  // byte index 1 is reserved and not used yet
+
+  if (version > CURRENT_VERSION) {
+    throw new Error(`Unexpected version ${version}`);
+  }
+  let msgType = headerView.getUint16(2, true);
+  let textLength = headerView.getUint32(4, true);
 
   let byteView = new Uint8Array(data);
 
   let decoder = new TextDecoder();
-
   let decoded = JSON.parse(
     decoder.decode(byteView.subarray(HEADER_LENGTH, HEADER_LENGTH + textLength))
   );
 
-  let binaryData =
-    format === MessageFormat.text_and_binary
-      ? byteView.subarray(HEADER_LENGTH + textLength).slice()
-      : undefined;
+  let binaryData = hasBinaryData(msgType)
+    ? byteView.subarray(HEADER_LENGTH + textLength).slice()
+    : undefined;
   return {
-    type: MsgType.chat_response_audio,
+    type: msgType,
     data: decoded,
     binaryData,
   };
@@ -97,7 +120,7 @@ function serializeAudioData<DATA extends { audio: ArrayBuffer }>(
   return serializeData(msgType, rest, audio);
 }
 
-function serializeMessage<MSG extends Message<MsgType, any>>(msg: MSG) {
+export function serializeMessage<MSG extends AnyMessage>(msg: MSG) {
   switch (msg.type) {
     case MsgType.chat_response_audio:
     case MsgType.request_audio_chat:
@@ -107,7 +130,7 @@ function serializeMessage<MSG extends Message<MsgType, any>>(msg: MSG) {
   }
 }
 
-function deserializeMessage(msg: ArrayBuffer): Message<MsgType, any> {
+export function deserializeMessage(msg: ArrayBuffer): AnyMessage {
   let { type, data, binaryData } = deserializeData(msg);
 
   switch (type) {
@@ -122,5 +145,5 @@ function deserializeMessage(msg: ArrayBuffer): Message<MsgType, any> {
   return {
     type,
     data,
-  };
+  } as unknown as AnyMessage;
 }
