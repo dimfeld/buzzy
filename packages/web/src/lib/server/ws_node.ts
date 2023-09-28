@@ -4,16 +4,24 @@ import type { IncomingMessage } from 'http';
 import type { Duplex } from 'stream';
 import { websocketSession } from './ws';
 
-let wsServer: WebSocketServer | null = null;
+const wsServerKey = Symbol.for('buzzy.wsServer');
+
+type Global = typeof globalThis & {
+  [wsServerKey]: WebSocketServer | undefined;
+};
 
 export function getWebsocketServer(): WebSocketServer {
-  if (wsServer) {
-    return wsServer;
+  const existing = (globalThis as Global)[wsServerKey];
+  if (existing) {
+    return existing;
   }
 
-  wsServer = new WebSocketServer({
+  const wsServer = new WebSocketServer({
     noServer: true,
+    path: '/ws',
   });
+
+  (globalThis as Global)[wsServerKey] = wsServer;
 
   wsServer.on('connection', websocketSession);
 
@@ -22,13 +30,10 @@ export function getWebsocketServer(): WebSocketServer {
 
 export function handleWsUpgrade(wsServer: WebSocketServer) {
   return (req: IncomingMessage, sock: Duplex, head: Buffer) => {
-    const path = req.url ? parse(req.url).pathname : null;
-    if (path !== '/ws') {
-      return;
+    if (wsServer.shouldHandle(req)) {
+      wsServer.handleUpgrade(req, sock, head, (ws) => {
+        wsServer.emit('connection', ws, req);
+      });
     }
-
-    wsServer.handleUpgrade(req, sock, head, (ws) => {
-      wsServer.emit('connection', ws, req);
-    });
   };
 }

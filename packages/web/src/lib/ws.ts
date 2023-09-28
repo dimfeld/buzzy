@@ -1,10 +1,11 @@
 export enum MsgType {
   client_hello = 1,
-  request_audio_chat = 2,
-  request_text_chat = 3,
-  new_chat_response = 4,
-  chat_response_audio = 5,
-  chat_response_text = 6,
+  error = 2,
+  request_audio_chat = 3,
+  request_text_chat = 4,
+  new_chat_response = 5,
+  chat_response_audio = 6,
+  chat_response_text = 7,
 }
 
 export interface Message<TYPE extends MsgType, DATA> {
@@ -13,43 +14,51 @@ export interface Message<TYPE extends MsgType, DATA> {
 }
 
 export type ClientInitMsg = Message<MsgType.client_hello, { sample_rate: number }>;
+export type ErrorMsg = Message<MsgType.error, { error: string; response_to?: number }>;
 export type RequestAudioMsg = Message<MsgType.request_audio_chat, { audio: ArrayBuffer }>;
 export type RequestTextMsg = Message<MsgType.request_text_chat, { text: string }>;
 
-export type NewChatResponseMsg = Message<MsgType.new_chat_response, { chat_id: number }>;
+export type NewChatResponseMsg = Message<
+  MsgType.new_chat_response,
+  { chat_id: number; response_to: number }
+>;
 export type ChatResponseAudioMsg = Message<
   MsgType.chat_response_audio,
   { chat_id: number; audio: ArrayBuffer }
 >;
 export type ChatResponseTextMsg = Message<
   MsgType.chat_response_text,
-  { chat_id: number; text: string }
+  { chat_id: number; role: 'user' | 'assistant'; text: string }
 >;
 
 export type AnyMessage =
   | ClientInitMsg
+  | ErrorMsg
   | RequestAudioMsg
   | RequestTextMsg
   | NewChatResponseMsg
   | ChatResponseAudioMsg
   | ChatResponseTextMsg;
 
+export type MessageWithId = AnyMessage & { id: number };
+
 function hasBinaryData(type: MsgType) {
   return type === MsgType.chat_response_audio || type === MsgType.request_audio_chat;
 }
 
 const CURRENT_VERSION = 0;
-const HEADER_LENGTH = 8;
+const HEADER_LENGTH = 12;
 
 // Data format
 // 0 - protocol version
 // 1 - reserved for future flags
 // 2-3 - message type
-// 4-7 - text data length
+// 4-7 - message ID
+// 8-11 - text data length
 // text data
 // binary data, if present
 
-function serializeData(msgType: MsgType, jsonData: object, binary?: ArrayBuffer) {
+function serializeData(msgType: MsgType, id: number, jsonData: object, binary?: ArrayBuffer) {
   let encoder = new TextEncoder();
   let textData = JSON.stringify(jsonData);
 
@@ -61,7 +70,8 @@ function serializeData(msgType: MsgType, jsonData: object, binary?: ArrayBuffer)
   dataView.setUint8(0, CURRENT_VERSION);
   dataView.setUint8(1, 0); // Reserved for future use
   dataView.setUint16(2, msgType, true);
-  dataView.setUint32(4, encodedText.length, true);
+  dataView.setUint32(4, id, true);
+  dataView.setUint32(8, encodedText.length, true);
 
   let byteView = new Uint8Array(buffer);
   byteView.set(encodedText, HEADER_LENGTH);
@@ -80,6 +90,7 @@ function serializeData(msgType: MsgType, jsonData: object, binary?: ArrayBuffer)
 
 interface DeserializedMessage {
   type: MsgType;
+  id: number;
   data: object;
   binaryData?: ArrayBuffer;
 }
@@ -93,7 +104,8 @@ function deserializeData(data: ArrayBuffer): DeserializedMessage {
     throw new Error(`Unexpected version ${version}`);
   }
   let msgType = headerView.getUint16(2, true);
-  let textLength = headerView.getUint32(4, true);
+  let msgId = headerView.getUint32(4, true);
+  let textLength = headerView.getUint32(8, true);
 
   let byteView = new Uint8Array(data);
 
@@ -107,6 +119,7 @@ function deserializeData(data: ArrayBuffer): DeserializedMessage {
     : undefined;
   return {
     type: msgType,
+    id: msgId,
     data: decoded,
     binaryData,
   };
@@ -114,24 +127,51 @@ function deserializeData(data: ArrayBuffer): DeserializedMessage {
 
 function serializeAudioData<DATA extends { audio: ArrayBuffer }>(
   msgType: MsgType,
+  id: number,
   data: DATA
 ): ArrayBuffer {
   let { audio, ...rest } = data;
-  return serializeData(msgType, rest, audio);
+  return serializeData(msgType, id, rest, audio);
 }
 
-export function serializeMessage<MSG extends AnyMessage>(msg: MSG) {
+let nextId = 0;
+function getMessageId() {
+  let id = nextId++;
+  if (nextId > 0xffffffff) {
+    // Just wrap around at 32 bits. This theoretically could be an issue if 4 billion messages go by
+    // and we're still keeping references to those old messages, but this particular system does not
+    // use the message IDs long term.
+    nextId = 0;
+  }
+
+  return id;
+}
+
+export function serializeMessage<MSG extends AnyMessage>(
+  msg: MSG
+): { id: number; data: ArrayBuffer } {
+  let id = getMessageId();
+
   switch (msg.type) {
     case MsgType.chat_response_audio:
     case MsgType.request_audio_chat:
-      return serializeAudioData(msg.type, msg.data);
+      return { id, data: serializeAudioData(msg.type, id, msg.data) };
     default:
-      return serializeData(msg.type, msg.data);
+      return { id, data: serializeData(msg.type, id, msg.data) };
   }
 }
 
-export function deserializeMessage(msg: ArrayBuffer): AnyMessage {
-  let { type, data, binaryData } = deserializeData(msg);
+export function sendMessage<MSG extends AnyMessage>(
+  ws: { send(data: ArrayBuffer): void },
+  message: MSG
+): number {
+  let { id, data } = serializeMessage<MSG>(message);
+  ws.send(data);
+  return id;
+}
+
+export function deserializeMessage(msg: ArrayBuffer): MessageWithId {
+  let { type, id, data, binaryData } = deserializeData(msg);
 
   switch (type) {
     case MsgType.chat_response_audio:
@@ -144,6 +184,7 @@ export function deserializeMessage(msg: ArrayBuffer): AnyMessage {
 
   return {
     type,
+    id,
     data,
   } as unknown as AnyMessage;
 }
