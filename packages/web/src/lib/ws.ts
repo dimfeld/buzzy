@@ -6,6 +6,7 @@ export enum MsgType {
   new_chat_response = 5,
   chat_response_audio = 6,
   chat_response_text = 7,
+  chat_response_done = 8,
 }
 
 export interface Message<TYPE extends MsgType, DATA> {
@@ -13,9 +14,12 @@ export interface Message<TYPE extends MsgType, DATA> {
   data: DATA;
 }
 
-export type ClientInitMsg = Message<MsgType.client_hello, { sample_rate: number }>;
+export type ClientInitMsg = Message<MsgType.client_hello, {}>;
 export type ErrorMsg = Message<MsgType.error, { error: string; response_to?: number }>;
-export type RequestAudioMsg = Message<MsgType.request_audio_chat, { audio: ArrayBuffer }>;
+export type RequestAudioMsg = Message<
+  MsgType.request_audio_chat,
+  { audio: ArrayBuffer; sample_rate: number }
+>;
 export type RequestTextMsg = Message<MsgType.request_text_chat, { text: string }>;
 
 export type NewChatResponseMsg = Message<
@@ -30,6 +34,7 @@ export type ChatResponseTextMsg = Message<
   MsgType.chat_response_text,
   { chat_id: number; role: 'user' | 'assistant'; text: string }
 >;
+export type ChatResponseDoneMsg = Message<MsgType.chat_response_done, { chat_id: number }>;
 
 export type AnyMessage =
   | ClientInitMsg
@@ -38,7 +43,8 @@ export type AnyMessage =
   | RequestTextMsg
   | NewChatResponseMsg
   | ChatResponseAudioMsg
-  | ChatResponseTextMsg;
+  | ChatResponseTextMsg
+  | ChatResponseDoneMsg;
 
 export type MessageWithId = AnyMessage & { id: number };
 
@@ -115,7 +121,7 @@ function deserializeData(data: ArrayBuffer): DeserializedMessage {
   );
 
   let binaryData = hasBinaryData(msgType)
-    ? byteView.subarray(HEADER_LENGTH + textLength).slice()
+    ? byteView.subarray(HEADER_LENGTH + textLength).slice().buffer
     : undefined;
   return {
     type: msgType,
@@ -162,9 +168,14 @@ export function serializeMessage<MSG extends AnyMessage>(
 }
 
 export function sendMessage<MSG extends AnyMessage>(
-  ws: { send(data: ArrayBuffer): void },
+  ws: { send(data: ArrayBuffer): void } | null,
   message: MSG
 ): number {
+  if (!ws) {
+    // This only happens when the page and socket have closed so we don't want to send any more messages.
+    return -1;
+  }
+
   let { id, data } = serializeMessage<MSG>(message);
   ws.send(data);
   return id;
@@ -186,5 +197,5 @@ export function deserializeMessage(msg: ArrayBuffer): MessageWithId {
     type,
     id,
     data,
-  } as unknown as AnyMessage;
+  } as unknown as MessageWithId;
 }

@@ -5,12 +5,21 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import ChatBubble from '$lib/components/ChatBubble.svelte';
   import type { SubmitFunction } from '@sveltejs/kit';
-  import { listenAudio, type ListenerState } from '$lib/audio/listening';
-  import { onMount, tick } from 'svelte';
+  import { listenAudio } from '$lib/audio/listening';
+  import { onDestroy, onMount, tick } from 'svelte';
   import type { Writable } from 'svelte/store';
   import { machine } from '$lib/state.js';
   import { useMachine } from '@xstate/svelte';
   import { WebSocket } from 'partysocket';
+  import { page } from '$app/stores';
+  import {
+    deserializeMessage,
+    MsgType,
+    sendMessage,
+    type MessageWithId,
+    type NewChatResponseMsg,
+    type ChatResponseTextMsg,
+  } from '$lib/ws.js';
 
   export let data;
 
@@ -20,26 +29,33 @@
   const { state, send, service } = useMachine(machine);
   $: submitting = $state.matches('processing');
 
-  const wsPath = new URL('/ws', location.href);
+  const wsPath = new URL('/ws', $page.url.origin);
   wsPath.protocol = 'ws:';
-  const ws = new WebSocket(wsPath.toString());
-
-  ws.addEventListener('message', (ev) => {});
+  let ws: WebSocket | null = null;
 
   interface Message {
+    /** The ID of the message for the websocket server */
+    wsId?: string;
     role: 'assistant' | 'user';
     content: string;
   }
 
-  function addMessage(message: Message) {
-    data.messages = [...data.messages, message];
+  function scrollToBottom() {
     tick().then(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }));
   }
 
   async function gotAudio(buffer: Int16Array) {
-    const body = new FormData();
-    body.set('sample_rate', '16000');
-    body.set('data', new File([buffer], 'audio.bin', { type: 'application/octet-stream' }));
+    sendMessage(ws, {
+      type: MsgType.request_audio_chat,
+      data: {
+        sample_rate: 16000,
+        audio: buffer.buffer,
+      },
+    });
+  }
+
+  /*
+  async function old() {
 
     const result = await ky('/ask/transcribe', {
       method: 'POST',
@@ -85,23 +101,16 @@
     //const ttsOutputFloats = new Float32Array(ttsOutputBuf);
     //playSound(ttsOutputFloats, 16000);
   }
+   */
 
   let audioContext: AudioContext | null = null;
-
-  function int16ToFloat32(data: Int16Array) {
-    let float32Array = new Float32Array(data.length);
-
-    for (let i = 0; i < data.length; i++) {
-      float32Array[i] = data[i] / 0x8000; // Convert from Int16 to Float32
-    }
-
-    return float32Array;
-  }
 
   async function playWav(data: ArrayBuffer) {
     if (!audioContext) {
       return null;
     }
+
+    console.log(data);
 
     const buffer = await audioContext.decodeAudioData(data);
     const source = audioContext.createBufferSource();
@@ -114,54 +123,111 @@
     });
   }
 
-  function playSound(data: Float32Array, sampleRate: number) {
-    if (!audioContext) {
-      return;
-    }
-
-    let buffer = audioContext.createBuffer(1, data.length, sampleRate);
-
-    buffer.copyToChannel(data, 0);
-
-    let source = audioContext.createBufferSource();
-    source.buffer = buffer;
-    source.connect(audioContext.destination);
-    source.start();
-  }
-
   onMount(() => {
     audioContext = new AudioContext();
     const audio = listenAudio(service, gotAudio);
-    listenerState = audio.listenerState;
-    return audio.unsubscribe;
+
+    ws = new WebSocket(wsPath.toString());
+    ws.binaryType = 'arraybuffer';
+    ws.onerror = (e) => {
+      console.error('ws error', e);
+    };
+
+    ws.addEventListener('open', () => {
+      send({ type: 'INITIALIZED', module: 'ws' });
+      sendMessage(ws!, {
+        type: MsgType.client_hello,
+        data: {},
+      });
+    });
+
+    ws.addEventListener('message', (ev) => {
+      let data = deserializeMessage(ev.data);
+      handleMessage(data);
+    });
+
+    return () => {
+      audio.unsubscribe();
+      ws?.close();
+      ws = null;
+    };
   });
 
-  const handleSubmit: SubmitFunction = async ({ formData, cancel }) => {
-    const chat = formData.get('chat') as string;
-    if (!chat) {
-      cancel();
+  function handleMessage(msg: MessageWithId) {
+    console.log(msg);
+    switch (msg.type) {
+      case MsgType.chat_response_audio:
+        // TODO enqueue the audio, don't just play it immediately
+        playWav(msg.data.audio);
+        break;
+      case MsgType.chat_response_text:
+        send({ type: 'GOT_ANSWER' });
+        addToChatMessage(msg);
+        break;
+      case MsgType.new_chat_response:
+        handleNewChatResponse(msg);
+        break;
+      case MsgType.chat_response_done:
+        send({ type: 'ANSWERED' });
+        break;
+      default:
+        console.error(msg);
+    }
+  }
+
+  function handleNewChatResponse(msg: NewChatResponseMsg) {
+    data.messages = [
+      ...data.messages,
+      {
+        wsId: msg.data.chat_id,
+        role: 'user',
+        content: '',
+      },
+    ];
+
+    scrollToBottom();
+  }
+
+  function addToChatMessage(msg: ChatResponseTextMsg) {
+    const messageIndex = data.messages.findIndex(
+      (m) => m.wsId === msg.data.chat_id && m.role === msg.data.role
+    );
+
+    if (messageIndex < 0) {
+      data.messages = [
+        ...data.messages,
+        {
+          wsId: msg.data.chat_id,
+          role: msg.data.role,
+          content: msg.data.text,
+        },
+      ];
+    } else {
+      data.messages[messageIndex].content += msg.data.text;
     }
 
-    data.messages = [...data.messages, { role: 'user', content: chat }];
+    scrollToBottom();
+  }
 
-    submitting = true;
-    setTimeout(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }), 0);
+  function submitText(e: SubmitEvent) {
+    if (!ws) {
+      return;
+    }
 
-    return async function ({ update, result }) {
-      submitting = false;
-      await update();
-      if (result.type === 'success' && result.data?.response) {
-        getTts(result.data.response);
-        setTimeout(() => chatEl?.scroll({ top: chatEl.scrollHeight, behavior: 'smooth' }), 0);
-      }
-    };
-  };
+    sendMessage(ws, {
+      type: MsgType.request_text_chat,
+      data: {
+        text: formEl.chat.value,
+      },
+    });
+    formEl?.reset();
+  }
 </script>
 
 <main class="flex h-full flex-col">
   <div bind:this={chatEl} class="flex flex-1 flex-col gap-8 overflow-y-auto px-8">
     {#each data.messages as message}
-      <ChatBubble role={message.role}>{message.content}</ChatBubble>
+      <ChatBubble role={message.role}>{message.content || '...'}</ChatBubble>
     {:else}
       <ChatBubble role="assistant">Hi I'm Buzzy!</ChatBubble>
     {/each}
@@ -174,7 +240,7 @@
     bind:this={formEl}
     class="flex items-stretch gap-2"
     method="POST"
-    use:enhance={handleSubmit}
+    on:submit|preventDefault={submitText}
   >
     <Textarea
       name="chat"

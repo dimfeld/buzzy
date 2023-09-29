@@ -5,19 +5,24 @@ import {
   type MessageWithId,
   type RequestAudioMsg,
   type RequestTextMsg,
-} from '$lib/ws';
+} from '../ws';
+import * as llm from '../llm/index';
 import type { IncomingMessage } from 'http';
 import type { WebSocket } from 'ws';
+import { generateAudio } from './tts';
+import { runAsr } from './asr';
 
 export function websocketSession(ws: WebSocket, _req: IncomingMessage) {
-  let incomingAudioSampleRate = 16000;
+  ws.on('error', (err) => {
+    console.error('websocket error', err);
+  });
 
   ws.binaryType = 'arraybuffer';
 
   function handleMessage(message: MessageWithId) {
+    console.log('got message', message);
     switch (message.type) {
       case MsgType.client_hello:
-        incomingAudioSampleRate = message.data.sample_rate;
         break;
       case MsgType.request_audio_chat:
       case MsgType.request_text_chat:
@@ -40,7 +45,16 @@ export function websocketSession(ws: WebSocket, _req: IncomingMessage) {
 
   ws.on('message', (data: ArrayBuffer) => {
     const value = deserializeMessage(data);
-    handleMessage(value);
+    try {
+      handleMessage(value);
+    } catch (e) {
+      console.error(e);
+      sendError((e as Error).message, value.id);
+    }
+  });
+
+  ws.on('close', (code, reason) => {
+    console.error('websocket closed', code, reason.toString());
   });
 }
 
@@ -62,29 +76,52 @@ async function runChat(
 
   let messageText: string;
   if (message.type === MsgType.request_audio_chat) {
-    messageText = await runAsr(message.data.audio);
-
-    // Send the parsed text back to the user
-    sendMessage(ws, {
-      type: MsgType.chat_response_text,
-      data: {
-        role: 'user',
-        chat_id: chatId,
-        text: messageText,
-      },
-    });
+    messageText = await runAsr(message.data.audio, message.data.sample_rate);
   } else {
     messageText = message.data.text;
   }
 
-  // Send to ChatGPT
-  // Generate audio and send to user as each sentence is streamed back.
-}
+  // Send the parsed text back to the user
+  sendMessage(ws, {
+    type: MsgType.chat_response_text,
+    data: {
+      role: 'user',
+      chat_id: chatId,
+      text: messageText,
+    },
+  });
 
-async function runAsr(audio: ArrayBuffer) {
-  return 'TODO';
-}
+  // TODO Move all this over to chunked data:
+  // Send text to user as it gets returned from the LLM
+  // Once we accumulate a sentence, render it into audio and send that to the client.
 
-async function generateAudio(text: string) {
-  // TODO
+  const TEST = true;
+  const response = TEST ? 'a simple response' : await llm.handleMessage(messageText);
+
+  sendMessage(ws, {
+    type: MsgType.chat_response_text,
+    data: {
+      role: 'assistant',
+      chat_id: chatId,
+      text: response,
+    },
+  });
+
+  // Generate audio
+  const audio = await generateAudio(response);
+
+  sendMessage(ws, {
+    type: MsgType.chat_response_audio,
+    data: {
+      chat_id: chatId,
+      audio,
+    },
+  });
+
+  sendMessage(ws, {
+    type: MsgType.chat_response_done,
+    data: {
+      chat_id: chatId,
+    },
+  });
 }

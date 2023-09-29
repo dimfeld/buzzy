@@ -8,6 +8,7 @@ export async function load() {
     messages: messages.map((m) => ({
       role: m.role as 'assistant' | 'user',
       content: m.content,
+      wsId: -1,
     })),
   };
 }
