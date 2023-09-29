@@ -4,7 +4,8 @@ import PorcupineParams from './models/porcupine_params.pv?url';
 import { PorcupineWorker } from '@picovoice/porcupine-web';
 import { CobraWorker } from '@picovoice/cobra-web';
 import { WebVoiceProcessor, type WvpMessageEvent } from '@picovoice/web-voice-processor';
-import type { StateMachine } from '$lib/state';
+import type { StateMachine, StateMachineState } from '$lib/state';
+import type { StateFrom } from 'xstate';
 
 export type ListenerState = 'initializing' | 'waiting' | 'active';
 
@@ -18,14 +19,17 @@ export type AudioCallback = (data: Int16Array) => void | Promise<void>;
 
 export function listenAudio(state: StateMachine, cb: AudioCallback) {
   let recording = false;
-  const unsubState = state.onTransition((s) => {
+
+  function onTransition(s: StateMachineState) {
     console.dir(s);
     if (s.matches('listening')) {
       startRecording();
     } else {
       stopRecording();
     }
-  });
+  }
+
+  state.onTransition(onTransition);
 
   let inputBuffer: Int16Array[] = [];
   let lastInactiveFrames: Int16Array[] = [];
@@ -125,14 +129,14 @@ export function listenAudio(state: StateMachine, cb: AudioCallback) {
     cobra = await CobraWorker.create(PUBLIC_PICOVOICE_KEY, voiceProbability);
 
     await WebVoiceProcessor.subscribe([porcupine, recorder]);
-    state.send({ type: 'INITIALIZED' });
+    state.send({ type: 'INITIALIZED', module: 'audio' });
   }
 
   init();
 
   return {
     unsubscribe: async function () {
-      unsubState?.unsubscribe();
+      state.off(onTransition);
       try {
         await WebVoiceProcessor.reset();
         await Promise.all([porcupine.release(), cobra.release()]);

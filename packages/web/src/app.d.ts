@@ -1,3 +1,4 @@
+import type { WebSocketServer } from 'ws';
 import type ky from 'ky';
 
 // See https://kit.svelte.dev/docs/types#app
@@ -7,6 +8,7 @@ declare global {
     // interface Error {}
     interface Locals {
       ky: typeof ky;
+      wss: WebSocketServer;
     }
     // interface PageData {}
     // interface Platform {}

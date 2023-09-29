@@ -1,18 +1,22 @@
-import { assign, createMachine, type InterpreterFrom } from 'xstate';
+import { assign, createMachine, type InterpreterFrom, type StateFrom } from 'xstate';
 
 export interface StateMachineContext {
   recording: boolean;
+  initialized: {
+    ws: boolean;
+    audio: boolean;
+  };
 }
 
 export type StateMachineEvents =
-  | { type: 'INITIALIZED' }
+  | { type: 'INITIALIZED'; module: 'ws' | 'audio' }
   | { type: 'WAKE_WORD' }
   | { type: 'VOICE_END' }
   | { type: 'GOT_ANSWER' }
   | { type: 'ANSWERED' }
   | { type: 'entry' | 'exit' };
 
-export type States = 'initializing' | 'waiting' | 'listening' | 'processing';
+export type States = 'initializing' | 'maybeFinished' | 'waiting' | 'listening' | 'processing';
 
 export const machine = createMachine(
   {
@@ -26,12 +30,32 @@ export const machine = createMachine(
     },
     context: {
       recording: false,
+      initialized: {
+        ws: false,
+        audio: false,
+      },
     },
     states: {
       initializing: {
         on: {
-          INITIALIZED: 'waiting',
+          INITIALIZED: [
+            {
+              actions: ['handleInit'],
+              target: 'maybeFinished',
+            },
+          ],
         },
+      },
+      maybeFinished: {
+        always: [
+          {
+            target: 'waiting',
+            cond: 'initDone',
+          },
+          {
+            target: 'initializing',
+          },
+        ],
       },
       waiting: {
         on: {
@@ -39,9 +63,9 @@ export const machine = createMachine(
         },
       },
       listening: {
+        entry: 'startRecording',
+        exit: 'stopRecording',
         on: {
-          entry: { actions: 'startRecording' },
-          exit: { actions: 'stopRecording' },
           VOICE_END: 'processing',
         },
       },
@@ -58,7 +82,25 @@ export const machine = createMachine(
     },
   },
   {
+    guards: {
+      initDone: (context: StateMachineContext, event: StateMachineEvents) => {
+        return Object.values(context.initialized).every(Boolean);
+      },
+    },
     actions: {
+      handleInit: assign({
+        initialized: (context: StateMachineContext, event: StateMachineEvents) => {
+          if (event.type !== 'INITIALIZED') {
+            return context.initialized;
+          }
+
+          return {
+            ...context.initialized,
+            [event.module]: true,
+          };
+        },
+      }),
+
       startRecording: assign({
         recording: true,
       }),
@@ -69,4 +111,5 @@ export const machine = createMachine(
   }
 );
 
+export type StateMachineState = StateFrom<typeof machine>;
 export type StateMachine = InterpreterFrom<typeof machine>;
