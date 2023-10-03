@@ -73,7 +73,7 @@
       body: chatBody,
     }).json<{ response: string }>();
 
-    send({ type: 'GOT_ANSWER' });
+    send({ type: 'ANSWER_START' });
 
     addMessage({ role: 'assistant', content: assistantResponse.response });
 
@@ -110,8 +110,6 @@
       return null;
     }
 
-    console.log(data);
-
     const buffer = await audioContext.decodeAudioData(data);
     const source = audioContext.createBufferSource();
     source.buffer = buffer;
@@ -122,6 +120,17 @@
       source.start();
     });
   }
+
+  const audioPlayStream = new WritableStream<ArrayBuffer | 'done'>({
+    async write(chunk, controller) {
+      if (chunk instanceof ArrayBuffer) {
+        await playWav(chunk);
+      } else if (chunk === 'done') {
+        send({ type: 'ANSWERED' });
+      }
+    },
+  });
+  const audioEnqueuer = audioPlayStream.getWriter();
 
   onMount(() => {
     audioContext = new AudioContext();
@@ -154,21 +163,19 @@
   });
 
   function handleMessage(msg: MessageWithId) {
-    console.log(msg);
     switch (msg.type) {
       case MsgType.chat_response_audio:
-        // TODO enqueue the audio, don't just play it immediately
-        playWav(msg.data.audio);
+        audioEnqueuer.write(msg.data.audio);
         break;
       case MsgType.chat_response_text:
-        send({ type: 'GOT_ANSWER' });
+        send({ type: 'ANSWER_START' });
         addToChatMessage(msg);
         break;
       case MsgType.new_chat_response:
         handleNewChatResponse(msg);
         break;
       case MsgType.chat_response_done:
-        send({ type: 'ANSWERED' });
+        audioEnqueuer.write('done');
         break;
       default:
         console.error(msg);
@@ -213,6 +220,8 @@
     if (!ws) {
       return;
     }
+
+    send({ type: 'SUBMITTED_AS_TEXT' });
 
     sendMessage(ws, {
       type: MsgType.request_text_chat,

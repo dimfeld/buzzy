@@ -9,10 +9,11 @@ import {
 import * as llm from '../llm/index';
 import type { IncomingMessage } from 'http';
 import type { WebSocket } from 'ws';
-import { generateAudio } from './tts';
+import { newAudioRenderer } from './tts';
 import { runAsr } from './asr';
 
 export function websocketSession(ws: WebSocket, _req: IncomingMessage) {
+  console.log('opened websocket');
   ws.on('error', (err) => {
     console.error('websocket error', err);
   });
@@ -91,32 +92,60 @@ async function runChat(
     },
   });
 
+  const audioRenderer = newAudioRenderer();
+  const ttsInput = audioRenderer.writable.getWriter();
+
   // TODO Move all this over to chunked data:
   // Send text to user as it gets returned from the LLM
   // Once we accumulate a sentence, render it into audio and send that to the client.
 
-  const TEST = true;
-  const response = TEST ? 'a simple response' : await llm.handleMessage(messageText);
+  let response = '';
 
-  sendMessage(ws, {
-    type: MsgType.chat_response_text,
-    data: {
-      role: 'assistant',
-      chat_id: chatId,
-      text: response,
-    },
-  });
+  async function handleChunk(chunk: string) {
+    sendMessage(ws, {
+      type: MsgType.chat_response_text,
+      data: {
+        role: 'assistant',
+        chat_id: chatId,
+        text: chunk,
+      },
+    });
 
-  // Generate audio
-  const audio = await generateAudio(response);
+    response += chunk;
 
-  sendMessage(ws, {
-    type: MsgType.chat_response_audio,
-    data: {
-      chat_id: chatId,
-      audio,
-    },
-  });
+    let { sentences, rest } = llm.getSentences(response);
+
+    response = rest;
+
+    for (let sentence of sentences) {
+      await ttsInput.write(sentence.trim());
+    }
+  }
+
+  async function doText() {
+    await llm.handleMessage(messageText, handleChunk);
+
+    const remaining = response.trim();
+    if (remaining) {
+      await ttsInput.write(remaining);
+    }
+
+    await ttsInput.close();
+  }
+
+  async function doAudio() {
+    for await (const audio of audioRenderer.readable) {
+      sendMessage(ws, {
+        type: MsgType.chat_response_audio,
+        data: {
+          chat_id: chatId,
+          audio,
+        },
+      });
+    }
+  }
+
+  await Promise.all([doText(), doAudio()]);
 
   sendMessage(ws, {
     type: MsgType.chat_response_done,

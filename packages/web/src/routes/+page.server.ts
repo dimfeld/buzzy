@@ -1,4 +1,4 @@
-import { getChatContext, getOrCreateChat, handleMessage, sendChat } from '$lib/llm/index.js';
+import { getChatContext, getOrCreateChat, handleMessage } from '$lib/llm/index.js';
 
 export async function load() {
   const chatId = await getOrCreateChat();
