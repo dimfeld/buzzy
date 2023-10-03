@@ -12,7 +12,8 @@ export type StateMachineEvents =
   | { type: 'INITIALIZED'; module: 'ws' | 'audio' }
   | { type: 'WAKE_WORD' }
   | { type: 'VOICE_END' }
-  | { type: 'GOT_ANSWER' }
+  | { type: 'SUBMITTED_AS_TEXT' }
+  | { type: 'ANSWER_START' }
   | { type: 'ANSWERED' }
   | { type: 'entry' | 'exit' };
 
@@ -60,6 +61,7 @@ export const machine = createMachine(
       waiting: {
         on: {
           WAKE_WORD: 'listening',
+          SUBMITTED_AS_TEXT: 'processing',
         },
       },
       listening: {
@@ -71,7 +73,7 @@ export const machine = createMachine(
       },
       processing: {
         on: {
-          GOT_ANSWER: 'answering',
+          ANSWER_START: 'answering',
         },
       },
       answering: {

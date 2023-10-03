@@ -21,3 +21,15 @@ export async function generateAudio(text: string): Promise<ArrayBuffer> {
 
   return response;
 }
+
+export function newAudioRenderer() {
+  const stream = new TransformStream<string, ArrayBuffer>({
+    transform(chunk, controller) {
+      return generateAudio(chunk)
+        .then((response) => controller.enqueue(response))
+        .catch((e) => controller.error(e));
+    },
+  });
+
+  return stream;
+}

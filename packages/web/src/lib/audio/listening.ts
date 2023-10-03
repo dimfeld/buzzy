@@ -21,7 +21,6 @@ export function listenAudio(state: StateMachine, cb: AudioCallback) {
   let recording = false;
 
   function onTransition(s: StateMachineState) {
-    console.dir(s);
     if (s.matches('listening')) {
       startRecording();
     } else {
