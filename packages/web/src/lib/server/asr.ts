@@ -11,7 +11,7 @@ export async function runAsr(audio: ArrayBuffer, sampleRate: number) {
   let response = await ky(`${fastApiUrl}/transcribe`, {
     body: formData,
     method: 'POST',
-  }).json<{ result: string }>();
+  }).json<{ result: string[] }>();
 
-  return response.result;
+  return response.result?.[0];
 }

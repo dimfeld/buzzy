@@ -12,6 +12,16 @@ import type { WebSocket } from 'ws';
 import { newAudioRenderer } from './tts';
 import { runAsr } from './asr';
 
+function sendError(ws: WebSocket, error: string, responseTo?: number) {
+  sendMessage(ws, {
+    type: MsgType.error,
+    data: {
+      response_to: responseTo,
+      error,
+    },
+  });
+}
+
 export function websocketSession(ws: WebSocket, _req: IncomingMessage) {
   console.log('opened websocket');
   ws.on('error', (err) => {
@@ -21,36 +31,24 @@ export function websocketSession(ws: WebSocket, _req: IncomingMessage) {
   ws.binaryType = 'arraybuffer';
 
   function handleMessage(message: MessageWithId) {
-    console.log('got message', message);
     switch (message.type) {
       case MsgType.client_hello:
         break;
       case MsgType.request_audio_chat:
       case MsgType.request_text_chat:
-        runChat(ws, message);
-        break;
+        return runChat(ws, message);
       default:
-        sendError(`Server received unexpected message type ${message.type}`, message.id);
+        sendError(ws, `Server received unexpected message type ${message.type}`, message.id);
     }
   }
 
-  function sendError(error: string, responseTo?: number) {
-    sendMessage(ws, {
-      type: MsgType.error,
-      data: {
-        response_to: responseTo,
-        error,
-      },
-    });
-  }
-
-  ws.on('message', (data: ArrayBuffer) => {
+  ws.on('message', async (data: ArrayBuffer) => {
     const value = deserializeMessage(data);
     try {
-      handleMessage(value);
+      await handleMessage(value);
     } catch (e) {
       console.error(e);
-      sendError((e as Error).message, value.id);
+      sendError(ws, (e as Error).message, value.id);
     }
   });
 
@@ -94,10 +92,6 @@ async function runChat(
 
   const audioRenderer = newAudioRenderer();
   const ttsInput = audioRenderer.writable.getWriter();
-
-  // TODO Move all this over to chunked data:
-  // Send text to user as it gets returned from the LLM
-  // Once we accumulate a sentence, render it into audio and send that to the client.
 
   let response = '';
 

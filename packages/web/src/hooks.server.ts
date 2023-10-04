@@ -5,7 +5,7 @@ import { getWebsocketServer } from '$lib/server/ws_node';
 
 if (!building) {
   const wsServer = getWebsocketServer();
-  console.log('setting up connection handler');
+  console.trace('setting up connection handler');
   wsServer.on('connection', websocketSession);
 }
 
