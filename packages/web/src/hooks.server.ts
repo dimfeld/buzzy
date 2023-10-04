@@ -6,7 +6,10 @@ import { getWebsocketServer } from '$lib/server/ws_node';
 if (!building) {
   const wsServer = getWebsocketServer();
   console.trace('setting up connection handler');
-  wsServer.on('connection', websocketSession);
+
+  if (!wsServer.rawListeners('connection').find((fn) => fn === websocketSession)) {
+    wsServer.on('connection', websocketSession);
+  }
 }
 
 export function handle({ event, resolve }) {
