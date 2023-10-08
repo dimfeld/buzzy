@@ -30,7 +30,7 @@
   $: submitting = $state.matches('processing');
 
   const wsPath = new URL('/ws', $page.url.origin);
-  wsPath.protocol = 'ws:';
+  wsPath.protocol = wsPath.protocol === 'https' ? 'wss:' : 'ws:';
   let ws: WebSocket | null = null;
 
   interface Message {
