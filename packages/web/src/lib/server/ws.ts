@@ -74,6 +74,7 @@ async function runChat(
   message: (RequestAudioMsg | RequestTextMsg) & { id: number }
 ) {
   let chatId = nextChatId++;
+  let tts = message.data.tts;
 
   sendMessage(ws, {
     type: MsgType.new_chat_response,
@@ -100,8 +101,8 @@ async function runChat(
     },
   });
 
-  const audioRenderer = newAudioRenderer();
-  const ttsInput = audioRenderer.writable.getWriter();
+  const audioRenderer = tts ? newAudioRenderer() : null;
+  const ttsInput = audioRenderer?.writable.getWriter();
 
   let response = '';
 
@@ -115,14 +116,16 @@ async function runChat(
       },
     });
 
-    response += chunk;
+    if (ttsInput) {
+      response += chunk;
 
-    let { sentences, rest } = llm.getSentences(response);
+      let { sentences, rest } = llm.getSentences(response);
 
-    response = rest;
+      response = rest;
 
-    for (let sentence of sentences) {
-      await ttsInput.write(sentence.trim());
+      for (let sentence of sentences) {
+        await ttsInput.write(sentence.trim());
+      }
     }
   }
 
@@ -130,14 +133,20 @@ async function runChat(
     await llm.handleMessage(messageText, handleChunk);
 
     const remaining = response.trim();
-    if (remaining) {
-      await ttsInput.write(remaining);
-    }
+    if (ttsInput) {
+      if (remaining) {
+        await ttsInput.write(remaining);
+      }
 
-    await ttsInput.close();
+      await ttsInput.close();
+    }
   }
 
   async function doAudio() {
+    if (!audioRenderer) {
+      return;
+    }
+
     for await (const audio of audioRenderer.readable) {
       sendMessage(ws, {
         type: MsgType.chat_response_audio,

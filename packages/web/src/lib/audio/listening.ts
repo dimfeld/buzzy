@@ -16,6 +16,9 @@ const SECONDS_INACTIVE_DATA = 0.1;
 const INACTIVE_FRAMES = Math.ceil(SECONDS_INACTIVE_DATA * FRAMES_PER_SECOND);
 
 export type AudioCallback = (data: Int16Array) => void | Promise<void>;
+export interface AudioListener {
+  unsubscribe: () => Promise<void>;
+}
 
 export function listenAudio(state: StateMachine, cb: AudioCallback) {
   let recording = false;
@@ -128,7 +131,7 @@ export function listenAudio(state: StateMachine, cb: AudioCallback) {
     cobra = await CobraWorker.create(PUBLIC_PICOVOICE_KEY, voiceProbability);
 
     await WebVoiceProcessor.subscribe([porcupine, recorder]);
-    state.send({ type: 'INITIALIZED', module: 'audio' });
+    // state.send({ type: 'INITIALIZED', module: 'audio' });
   }
 
   init();

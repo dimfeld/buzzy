@@ -5,13 +5,14 @@
   import Button from '$lib/components/ui/button/button.svelte';
   import ChatBubble from '$lib/components/ChatBubble.svelte';
   import type { SubmitFunction } from '@sveltejs/kit';
-  import { listenAudio } from '$lib/audio/listening';
+  import { listenAudio, type AudioListener } from '$lib/audio/listening';
   import { onDestroy, onMount, tick } from 'svelte';
   import type { Writable } from 'svelte/store';
   import { machine } from '$lib/state.js';
   import { useMachine } from '@xstate/svelte';
   import { WebSocket } from 'partysocket';
   import { page } from '$app/stores';
+  import { browser } from '$app/environment';
   import {
     deserializeMessage,
     MsgType,
@@ -25,6 +26,18 @@
 
   let formEl: HTMLFormElement;
   let chatEl: HTMLDivElement;
+
+  let enableListening = browser
+    ? window.localStorage.getItem('buzzy.enableListening') !== 'false'
+    : true;
+  let enableSpeaking = browser
+    ? window.localStorage.getItem('buzzy.enableSpeaking') !== 'false'
+    : true;
+
+  $: if (browser)
+    window.localStorage.setItem('buzzy.enableListening', enableListening ? 'true' : 'false');
+  $: if (browser)
+    window.localStorage.setItem('buzzy.enableSpeaking', enableSpeaking ? 'true' : 'false');
 
   const { state, send, service } = useMachine(machine);
   $: submitting = $state.matches('processing');
@@ -45,11 +58,17 @@
   }
 
   async function gotAudio(buffer: Int16Array) {
+    if (!enableListening) {
+      // TODO Really we should shut down the listening engine if listening is disabled.
+      return;
+    }
+
     sendMessage(ws, {
       type: MsgType.request_audio_chat,
       data: {
         sample_rate: 16000,
         audio: buffer.buffer,
+        tts: enableSpeaking,
       },
     });
   }
@@ -132,9 +151,21 @@
   });
   const audioEnqueuer = audioPlayStream.getWriter();
 
+  let audio: AudioListener | null = null;
+
+  $: if (browser) {
+    if (audio && !enableListening) {
+      audio.unsubscribe();
+      audio = null;
+    } else if (!audio && enableListening) {
+      audio = listenAudio(service, gotAudio);
+    }
+  }
+
+  onDestroy(() => audio?.unsubscribe());
+
   onMount(() => {
     audioContext = new AudioContext();
-    const audio = listenAudio(service, gotAudio);
 
     ws = new WebSocket(wsPath.toString());
     ws.binaryType = 'arraybuffer';
@@ -156,7 +187,6 @@
     });
 
     return () => {
-      audio.unsubscribe();
       ws?.close();
       ws = null;
     };
@@ -226,6 +256,7 @@
     sendMessage(ws, {
       type: MsgType.request_text_chat,
       data: {
+        tts: enableSpeaking,
         text: formEl.chat.value,
       },
     });
@@ -244,7 +275,18 @@
       <ChatBubble role="assistant">Let me think...</ChatBubble>
     {/if}
   </div>
-  <div>Current State: {$state.value}</div>
+  <div class="grid grid-cols-[1fr_auto_auto] gap-2 pb-2">
+    <div>Current State: {$state.value}</div>
+    <label>
+      <input type="checkbox" bind:checked={enableListening} />
+      Enable listening
+    </label>
+    <label>
+      <input type="checkbox" bind:checked={enableSpeaking} />
+      Enable speaking
+    </label>
+  </div>
+
   <form
     bind:this={formEl}
     class="flex items-stretch gap-2"

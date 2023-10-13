@@ -4,7 +4,6 @@ export interface StateMachineContext {
   recording: boolean;
   initialized: {
     ws: boolean;
-    audio: boolean;
   };
 }
 
@@ -33,7 +32,6 @@ export const machine = createMachine(
       recording: false,
       initialized: {
         ws: false,
-        audio: false,
       },
     },
     states: {
