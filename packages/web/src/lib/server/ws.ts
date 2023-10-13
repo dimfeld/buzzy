@@ -11,6 +11,8 @@ import type { IncomingMessage } from 'http';
 import type { WebSocket } from 'ws';
 import { newAudioRenderer } from './tts';
 import { runAsr } from './asr';
+import type { Duplex } from 'stream';
+import { getWebsocketServer } from './ws_node';
 
 function sendError(ws: WebSocket, error: string, responseTo?: number) {
   sendMessage(ws, {
@@ -19,6 +21,14 @@ function sendError(ws: WebSocket, error: string, responseTo?: number) {
       response_to: responseTo,
       error,
     },
+  });
+}
+
+export function handleUpgrade(req: IncomingMessage, sock: Duplex, head: Buffer) {
+  const wsServer = getWebsocketServer();
+  wsServer.handleUpgrade(req, sock, head, (ws) => {
+    console.log('handled', req.url);
+    websocketSession(ws, req);
   });
 }
 

@@ -29,9 +29,6 @@ export function handleWsUpgrade(req: IncomingMessage, sock: Duplex, head: Buffer
   const wsServer = getWebsocketServer();
   console.log('shouldHandle', wsServer.shouldHandle(req));
   if (wsServer.shouldHandle(req)) {
-    wsServer.handleUpgrade(req, sock, head, (ws) => {
-      console.log('handled', req.url);
-      wsServer.emit('connection', ws, req);
-    });
+    wsServer.emit('handleUpgrade', req, sock, head);
   }
 }
