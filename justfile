@@ -3,6 +3,11 @@ set dotenv-load
 _default:
   @just --list
 
+run:
+  just run-web &
+  just run-model-backend &
+  just run-mimic 
+
 run-web:
   cd packages/web && node build/index.js
 
