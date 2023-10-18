@@ -3,13 +3,21 @@ set dotenv-load
 _default:
   @just --list
 
+dev:
+  just dev-web &
+  just run-model-backend &
+  just run-mimic
+
+dev-web:
+  cd packages/web && pnpm dev
+
 run:
   just run-web &
   just run-model-backend &
-  just run-mimic 
+  just run-mimic
 
 run-web:
-  cd packages/web && node build/index.js
+  cd packages/web && node server/index.js
 
 run-mimic:
   cd packages/mimic3 && rye run mimic3-server \
@@ -24,4 +32,4 @@ run-model-backend:
       --reload \
       --port {{env_var('FASTAPI_PORT')}} \
       --app-dir src/model_backend_py \
-      app:app 
+      app:app
