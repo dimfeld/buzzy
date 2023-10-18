@@ -2,6 +2,8 @@ import { env } from '$env/dynamic/private';
 import { desc, eq } from 'drizzle-orm';
 import OpenAI from 'openai';
 import { db, chats, messages } from '../server/db';
+import { openAIFunctionList, runLlmFunction } from './functions';
+import type { ChatCompletionMessage, ChatCompletionMessageParam } from 'openai/resources/chat';
 
 const openai = new OpenAI({
   apiKey: env.OPENAI_KEY,
@@ -67,8 +69,35 @@ function testResponse() {
   });
 }
 
-async function sendChat(chatId: number, chat: string, cb: (chunk: string) => void) {
-  const latestMessages = await getChatContext(chatId);
+interface SendChatOptions {
+  chatId: number;
+  chat: string;
+  messages?: ChatCompletionMessageParam[];
+  saveResults?: boolean;
+  allowFunctions?: boolean;
+  cb: (chunk: string) => void;
+}
+
+async function sendChat(options: SendChatOptions) {
+  let chatMessages = options.messages;
+  if (!chatMessages) {
+    const latestMessages = await getChatContext(options.chatId);
+
+    chatMessages = [
+      {
+        role: 'system',
+        content: SYSTEM_PROMPT,
+      },
+      ...latestMessages.map((m) => ({
+        role: m.role as Role,
+        content: m.content,
+      })),
+      {
+        role: 'user',
+        content: options.chat,
+      },
+    ];
+  }
 
   const sendTime = new Date();
 
@@ -79,30 +108,50 @@ async function sendChat(chatId: number, chat: string, cb: (chunk: string) => voi
         model: 'gpt-3.5-turbo',
         user: 'buzzy-dev',
         stream: true,
-        messages: [
-          {
-            role: 'system',
-            content: SYSTEM_PROMPT,
-          },
-          ...latestMessages.map((m) => ({
-            role: m.role as Role,
-            content: m.content,
-          })),
-          {
-            role: 'user',
-            content: chat,
-          },
-        ],
+        function_call: options.allowFunctions === false ? 'none' : 'auto',
+        functions: openAIFunctionList,
+        messages: chatMessages,
       });
 
   let message = '';
   for await (const chunk of response) {
-    const text = chunk.choices[0]?.delta?.content;
+    const delta: ChatCompletionMessage = chunk.choices[0]?.delta;
+    if (!delta) {
+      continue;
+    }
+
+    if (delta.function_call) {
+      let fnStartTime = Date.now();
+      let duration = fnStartTime - sendTime.valueOf();
+      console.log(`Duration to get function: ${duration}ms`);
+
+      const fnResponse = await runLlmFunction(delta.function_call);
+
+      duration = Date.now() - fnStartTime.valueOf();
+      console.log(`Duration to run function: ${duration}ms`);
+
+      if (fnResponse) {
+        chatMessages.push(delta);
+        chatMessages.push({
+          role: 'function',
+          name: delta.function_call.name,
+          content: fnResponse,
+        });
+
+        return sendChat({
+          ...options,
+          allowFunctions: false,
+          messages: chatMessages,
+        });
+      }
+    }
+
+    const text = delta.content;
     if (!text) {
       continue;
     }
 
-    cb(text);
+    options.cb(text);
     message += text;
   }
 
@@ -117,31 +166,37 @@ async function sendChat(chatId: number, chat: string, cb: (chunk: string) => voi
     return message;
   }
 
-  await db.insert(messages).values([
-    {
-      chat_id: chatId,
-      role: 'user',
-      content: chat,
-      timestamp: sendTime,
-    },
-    {
-      chat_id: chatId,
-      role: 'assistant',
-      content: message,
-      timestamp: new Date(),
-    },
-  ]);
+  if (options.saveResults) {
+    await db.insert(messages).values([
+      {
+        chat_id: options.chatId,
+        role: 'user',
+        content: options.chat,
+        timestamp: sendTime,
+      },
+      {
+        chat_id: options.chatId,
+        role: 'assistant',
+        content: message,
+        timestamp: new Date(),
+      },
+    ]);
+  }
 
   return message;
 }
 
-export async function handleMessage(text: string, cb: (chunk: string) => void) {
-  if (!text) {
+export async function handleMessage(
+  chat: string,
+  saveResults: boolean,
+  cb: (chunk: string) => void
+) {
+  if (!chat) {
     return '';
   }
 
   const chatId = await getOrCreateChat();
-  const response = await sendChat(chatId, text, cb);
+  const response = await sendChat({ chatId, chat, saveResults, cb });
 
   return response;
 }

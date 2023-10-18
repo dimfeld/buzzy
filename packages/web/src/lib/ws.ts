@@ -14,13 +14,21 @@ export interface Message<TYPE extends MsgType, DATA> {
   data: DATA;
 }
 
+export interface ChatRequestOptions {
+  tts: boolean;
+  saveResults: boolean;
+}
+
 export type ClientInitMsg = Message<MsgType.client_hello, {}>;
 export type ErrorMsg = Message<MsgType.error, { error: string; response_to?: number }>;
 export type RequestAudioMsg = Message<
   MsgType.request_audio_chat,
-  { audio: ArrayBuffer; sample_rate: number; tts: boolean }
+  { audio: ArrayBuffer; sample_rate: number } & ChatRequestOptions
 >;
-export type RequestTextMsg = Message<MsgType.request_text_chat, { text: string; tts: boolean }>;
+export type RequestTextMsg = Message<
+  MsgType.request_text_chat,
+  { text: string } & ChatRequestOptions
+>;
 
 export type NewChatResponseMsg = Message<
   MsgType.new_chat_response,

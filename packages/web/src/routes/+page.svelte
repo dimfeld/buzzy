@@ -33,11 +33,13 @@
   let enableSpeaking = browser
     ? window.localStorage.getItem('buzzy.enableSpeaking') !== 'false'
     : true;
+  let saveResults = browser ? window.localStorage.getItem('buzzy.saveResults') !== 'false' : true;
 
   $: if (browser)
     window.localStorage.setItem('buzzy.enableListening', enableListening ? 'true' : 'false');
   $: if (browser)
     window.localStorage.setItem('buzzy.enableSpeaking', enableSpeaking ? 'true' : 'false');
+  $: if (browser) window.localStorage.setItem('buzzy.saveResults', saveResults ? 'true' : 'false');
 
   const { state, send, service } = useMachine(machine);
   $: submitting = $state.matches('processing');
@@ -69,6 +71,7 @@
         sample_rate: 16000,
         audio: buffer.buffer,
         tts: enableSpeaking,
+        saveResults,
       },
     });
   }
@@ -256,11 +259,15 @@
     sendMessage(ws, {
       type: MsgType.request_text_chat,
       data: {
-        tts: enableSpeaking,
         text: formEl.chat.value,
+        tts: enableSpeaking,
+        saveResults,
       },
     });
-    formEl?.reset();
+
+    if (saveResults) {
+      formEl?.reset();
+    }
   }
 </script>
 
@@ -275,16 +282,24 @@
       <ChatBubble role="assistant">Let me think...</ChatBubble>
     {/if}
   </div>
-  <div class="grid grid-cols-[1fr_auto_auto] gap-2 pb-2">
-    <div>Current State: {$state.value}</div>
-    <label>
-      <input type="checkbox" bind:checked={enableListening} />
-      Enable listening
-    </label>
-    <label>
-      <input type="checkbox" bind:checked={enableSpeaking} />
-      Enable speaking
-    </label>
+  <div class="grid grid-cols-2 gap-2 pb-2">
+    <div class="flex gap-2">
+      <span>Current State: {$state.value}</span>
+      <label>
+        <input type="checkbox" bind:checked={saveResults} />
+        Save Chat History
+      </label>
+    </div>
+    <div class="flex justify-end gap-2">
+      <label>
+        <input type="checkbox" bind:checked={enableListening} />
+        Enable listening
+      </label>
+      <label>
+        <input type="checkbox" bind:checked={enableSpeaking} />
+        Enable speaking
+      </label>
+    </div>
   </div>
 
   <form
