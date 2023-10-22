@@ -131,18 +131,24 @@ async function sendChat(options: SendChatOptions) {
       console.log(`Duration to run function: ${duration}ms`);
 
       if (fnResponse) {
-        chatMessages.push(delta);
-        chatMessages.push({
-          role: 'function',
-          name: delta.function_call.name,
-          content: fnResponse,
-        });
+        if (fnResponse.replay) {
+          chatMessages.push(delta);
+          chatMessages.push({
+            role: 'function',
+            name: delta.function_call.name,
+            content: fnResponse.text,
+          });
 
-        return sendChat({
-          ...options,
-          allowFunctions: false,
-          messages: chatMessages,
-        });
+          return sendChat({
+            ...options,
+            allowFunctions: false,
+            messages: chatMessages,
+          });
+        } else {
+          options.cb(fnResponse.text);
+          message += fnResponse.text;
+          break;
+        }
       }
     }
 
@@ -162,11 +168,7 @@ async function sendChat(options: SendChatOptions) {
     return '';
   }
 
-  if (TEST) {
-    return message;
-  }
-
-  if (options.saveResults) {
+  if (options.saveResults && !TEST) {
     await db.insert(messages).values([
       {
         chat_id: options.chatId,
